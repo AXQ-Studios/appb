@@ -8,17 +8,17 @@ services:
     container_name: appb_frontend
     restart: always
 
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.appb.rule=Host(`appb.axqstudios.tech`)"
+      - "traefik.http.routers.appb.entrypoints=websecure"
+      - "traefik.http.routers.appb.tls=true"
+      - "traefik.http.services.appb.loadbalancer.server.port=80"
 
-  nginx:
-    image: nginx:alpine
-    container_name: appb_nginx
-    restart: always
+    networks:
+      - traefik
 
-    ports:
-      - "80:80"
 
-    volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
-
-    depends_on:
-      - frontend
+networks:
+  traefik:
+    external: true
