@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>نظام متابعة الإجراءات والتجديدات</title>
+  
+  <!-- Bootstrap RTL CSS (Arabic Layout) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.rtl.min.css">
+  
+  <!-- Google Fonts: Cairo (Arabic typography) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2family=Cairo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.css">
+  
+  <!-- تضمين التنسيقات المخصصة من ملف style.html -->
+  <?!= include('style'); ?>
+</head>
+<body>
+
+  <!-- شاشة تسجيل الدخول المدمجة لـ Apps Script -->
+  <div id="loginContainer" class="login-screen-bg" style="display: none;">
+    <div class="container h-100 d-flex flex-column align-items-center justify-content-center py-5">
+      <div class="login-card p-4 p-md-5 shadow-lg w-100" style="max-width: 460px;">
+        <!-- اللوجو والعنوان الفاخر -->
+        <div class="text-center mb-4">
+          <div class="inline-flex-brand mb-3">
+            <i class="bi bi-clock-history animate-spin-reverse" style="font-size: 1.85rem; display: inline-block;"></i>
+          </div>
+          <h2 class="text-xl sm:text-2xl font-extrabold text-white text-center mb-1" style="font-size: 1.35rem; font-weight: 800;">
+            نظام متابعة الإجراءات والتجديدات
+          </h2>
+          <p class="text-xs text-muted text-center" style="font-size: 0.75rem;">
+            بوابة الإدارة المتكاملة للربط والتحكم الذكي
+          </p>
+        </div>
+
+        <!-- تنبيه خطأ -->
+        <div id="loginErrorAlert" class="alert alert-danger d-none animate-shake" role="alert" style="font-size: 0.8rem; border-radius: 12px; background-color: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.2); color: #fecaca;">
+          <i class="bi bi-exclamation-triangle-fill me-2 text-danger"></i>
+          <span id="loginErrorMsg">البيانات غير صحيحة!</span>
+        </div>
+
+        <form id="gasLoginForm" onsubmit="handleGasLoginSubmit(event)" class="d-flex flex-column gap-3">
+          <!-- البريد الإلكتروني -->
+          <div>
+            <label class="form-label text-light small fw-bold mb-1">البريد الإلكتروني للمسؤول</label>
+            <div class="input-group">
+              <span class="input-group-text bg-dark border-secondary text-slate-400"><i class="bi bi-envelope"></i></span>
+              <input type="email" id="gasLoginEmail" class="form-control bg-dark text-white border-secondary placeholder-slate" placeholder="example@domain.com" required value="">
+            </div>
+          </div>
+
+          <!-- كلمة المرور -->
+          <div>
+            <label class="form-label text-light small fw-bold mb-1">كلمة المرور</label>
+            <div class="input-group">
+              <span class="input-group-text bg-dark border-secondary text-slate-400"><i class="bi bi-lock"></i></span>
+              <input type="password" id="gasLoginPassword" class="form-control bg-dark text-white border-secondary" placeholder="••••••••" required value="">
+              <button type="button" class="btn btn-outline-secondary border-secondary bg-dark text-slate-400" onclick="toggleGasPasswordVisibility()">
+                <i id="gasPasswordToggleIcon" class="bi bi-eye"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- خيار تذكرني -->
+          <div class="form-check form-switch pt-1">
+            <input class="form-check-input" type="checkbox" id="gasLoginRememberMe" checked>
+            <label class="form-check-label text-slate-300 small cursor-pointer" for="gasLoginRememberMe">تذكرني على هذا الجهاز</label>
+          </div>
+
+          <!-- زر تسجيل الدخول -->
+          <button type="submit" id="gasLoginBtn" class="btn btn-primary w-full py-2.5 mt-2 fw-bold d-flex align-items-center justify-content-center gap-2">
+            <span id="gasLoginBtnSpinner" class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+            <span id="gasLoginBtnText">تسجيل الدخول الآمن</span>
+          </button>
+        </form>
+
+        <!-- زر التواصل مع المطور -->
+        <div class="mt-3 pt-3 border-top border-secondary">
+          <a href="https://wa.me/201020220280?text=%D8%A7%D9%84%D8%B3%D9%84%D8%A7%D9%85%20%D8%B9%D9%84%D9%8A%D9%83%D9%85%D8%8C%20%D8%A3%D9%88%D8%AF%20%D8%A7%D9%84%D8%AA%D9%88%D8%A7%D8%B5%D9%84%20%D8%A8%D8%AE%D8%B5%D9%88%D8%B5%20%D8%AA%D8%B7%D8%A8%D9%82%20%D8%A7%D9%84%D8%AA%D9%86%D8%A8%D9%8A%D9%87%20%D8%A7%D9%84%D8%A2%D9%84%D9%8A" target="_blank" rel="noopener noreferrer" class="w-full inline-flex items-center justify-center gap-2 px-4 py-3 bg-[#25D366] hover:bg-[#20ba5a] text-white rounded-2xl text-xs font-bold shadow-sm transition-all duration-200 active:scale-95 text-decoration-none" id="jaher_login_contact_dev_btn" style="display: inline-flex; width: 100%; border-radius: 12px; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;">
+            <svg viewBox="0 0 32 32" class="w-4 h-4" fill="currentColor" aria-hidden="true" style="width: 1rem; height: 1rem;">
+              <path d="M16.04 3C9.42 3 4.04 8.38 4.04 15c0 2.12.55 4.16 1.6 5.98L4 29l8.2-1.6a12 12 0 0 0 3.84.63h.01c6.62 0 12-5.38 12-12S22.66 3 16.04 3zm0 21.82c-1.2 0-2.38-.2-3.5-.6l-.25-.1-4.87.95.97-4.74-.16-.25a9.8 9.8 0 0 1-1.5-5.08c0-5.45 4.43-9.88 9.9-9.88 2.64 0 5.12 1.03 6.99 2.9a9.82 9.82 0 0 1 2.9 6.98c0 5.45-4.44 9.82-9.98 9.82zm5.43-7.36c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.3-.77.97-.94 1.17-.17.2-.35.22-.65.07-.3-.15-1.26-.46-2.4-1.48-.89-.79-1.49-1.77-1.66-2.07-.17-.3-.02-.46.13-.61.13-.13.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.02-.52-.07-.15-.67-1.62-.92-2.22-.24-.58-.49-.5-.67-.51l-.57-.01c-.2 0-.52.07-.79.37-.27.3-1.04 1.02-1.04 2.48 0 1.46 1.06 2.88 1.21 3.08.15.2 2.1 3.2 5.08 4.49.71.31 1.26.49 1.69.62.71.23 1.36.2 1.87.12.57-.08 1.76-.72 2.01-1.41.25-.7.25-1.29.17-1.41-.07-.13-.27-.2-.57-.35z"></path>
+            </svg>
+            <span>تواصل مع المطور عبر الواتساب</span>
+          </a>
+        </div>
+      </div>
+      <p class="text-center text-slate-600 mt-4 small" style="font-size: 0.65rem; color: #52525b;">
+        تطوير نظام الإدارة الآلي والمراقبة المتقنة © ٢٠٢٦ • جميع الحقوق محفوظة
+      </p>
+    </div>
+  </div>
+
+  <!-- حاوي التطبيق بالكامل -->
+  <div id="appContainer" style="display: none;">
+
+    <!-- شريط الملاحة العلوي -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-slate-900 sticky-top shadow-sm">
+      <div class="container">
+        <a class="navbar-brand d-flex align-items-center gap-2" href="#">
+          <div class="brand-icon-bg">
+            <i class="bi bi-clock-history"></i>
+          </div>
+          <div>
+            <span class="fw-bold block-title">نظام التجديدات والإجراءات</span>
+            <span class="sub-brand d-block">لوحة تحكم المساعد الإداري الذكي</span>
+          </div>
+        </a>
+        <div class="d-flex align-items-center gap-3">
+          <span class="text-slate-300 d-none d-lg-inline-block small" id="currentDateStr">
+            <i class="bi bi-calendar3 me-1"></i> <span id="currentDate">--</span>
+          </span>
+          
+          <!-- معلومات الحساب وتسجيل الخروج -->
+          <div class="d-flex align-items-center gap-2 border border-secondary rounded-pill px-3 py-1 bg-dark text-slate-300" id="gasUserBadge" style="font-size: 0.75rem;">
+            <span class="text-success animate-pulse">●</span>
+            <span id="gasUserEmail" class="font-monospace text-slate-300">--</span>
+            <button class="btn btn-link btn-sm text-danger p-0 ms-2 text-decoration-none fw-bold" onclick="handleGasLogout()"><i class="bi bi-box-arrow-left"></i> خروج</button>
+          </div>
+
+          <button class="btn btn-primary d-flex align-items-center gap-2 px-3 shadow" onclick="openAddModal()">
+            <i class="bi bi-plus-circle-fill"></i>
+            <span>إضافة إجراء جديد</span>
+          </button>
+        </div>
+      </div>
+    </nav>
+
+  <div class="container my-4">
+
+    <!-- صف الإحصائيات (Dashboard Cards) -->
+    <div class="row g-3 mb-4" id="statsRow">
+      <!-- كرت ساري -->
+      <div class="col-6 col-md-3">
+        <div class="card stat-card border-success h-100" onclick="filterByStatus('🟢 ساري')">
+          <div class="card-body d-flex flex-column justify-content-between">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <span class="text-muted fw-bold">سارية</span>
+              <div class="stat-icon bg-success-subtle text-success">
+                <i class="bi bi-check-circle-fill"></i>
+              </div>
+            </div>
+            <div>
+              <h3 class="fw-extrabold text-success mb-0" id="countActive">0</h3>
+              <p class="small text-muted mb-0">متبقي أكثر من 70 يوم</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- كرت جهز الإجراءات -->
+      <div class="col-6 col-md-3">
+        <div class="card stat-card border-warning h-100" onclick="filterByStatus('🟡 جهز الإجراءات')">
+          <div class="card-body d-flex flex-column justify-content-between">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <span class="text-muted fw-bold">جهز الإجراءات</span>
+              <div class="stat-icon bg-warning-subtle text-warning">
+                <i class="bi bi-file-earmark-medical-fill"></i>
+              </div>
+            </div>
+            <div>
+              <h3 class="fw-extrabold text-warning mb-0" id="countWarning">0</h3>
+              <p class="small text-muted mb-0">متبقي من 61 إلى 70 يوم</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- كرت تنبيه فوري -->
+      <div class="col-6 col-md-3">
+        <div class="card stat-card border-danger h-100" onclick="filterByStatus('🔴 تنبيه فوري')">
+          <div class="card-body d-flex flex-column justify-content-between">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <span class="text-muted fw-bold">تنبيه فوري</span>
+              <div class="stat-icon bg-danger-subtle text-danger animate-pulse">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+              </div>
+            </div>
+            <div>
+              <h3 class="fw-extrabold text-danger mb-0" id="countUrgent">0</h3>
+              <p class="small text-muted mb-0">متبقي 60 يوم أو أقل</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- كرت منتهية -->
+      <div class="col-6 col-md-3">
+        <div class="card stat-card border-slate h-100" onclick="filterByStatus('⚫ منتهي')">
+          <div class="card-body d-flex flex-column justify-content-between">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <span class="text-muted fw-bold">منتهية</span>
+              <div class="stat-icon bg-slate-200 text-slate-800">
+                <i class="bi bi-calendar-x-fill"></i>
+              </div>
+            </div>
+            <div>
+              <h3 class="fw-extrabold text-slate-800 mb-0" id="countExpired">0</h3>
+              <p class="small text-muted mb-0">الإجراء منتهي الصلاحية</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- أدوات البحث والفلترة والترتيب -->
+    <div class="card border-0 shadow-sm mb-4 filter-bar">
+      <div class="card-body p-3">
+        <div class="row g-2 align-items-center">
+          <!-- البحث النصي -->
+          <div class="col-12 col-md-3">
+            <div class="input-group">
+              <span class="input-group-text bg-white border-end-0 text-muted">
+                <i class="bi bi-search"></i>
+              </span>
+              <input type="text" id="searchInput" class="form-control border-start-0" placeholder="ابحث بالاسم، الإجراء، أو التفاصيل..." oninput="filterData()">
+            </div>
+          </div>
+          
+          <!-- فلتر القسم -->
+          <div class="col-6 col-md-2">
+            <select id="filterCategory" class="form-select" onchange="filterData()">
+              <option value="">كل الأقسام</option>
+              <option value="التعاقدات">التعاقدات</option>
+              <option value="مكاتب ومستودعات">مكاتب ومستودعات</option>
+              <option value="متابعة الموظف">متابعة الموظف</option>
+              <option value="السيارات">السيارات</option>
+              <option value="تنبيهات عامة">تنبيهات عامة</option>
+            </select>
+          </div>
+
+          <!-- فلتر الحالة -->
+          <div class="col-6 col-md-2">
+            <select id="filterStatus" class="form-select" onchange="filterData()">
+              <option value="">كل الحالات</option>
+              <option value="🟢 ساري">🟢 سارية</option>
+              <option value="🟡 جهز الإجراءات">🟡 جهز الإجراءات</option>
+              <option value="🔴 تنبيه فوري">🔴 تنبيه فوري</option>
+              <option value="⚫ منتهي">⚫ منتهية</option>
+            </select>
+          </div>
+
+          <!-- فلتر المدة الكاملة (تحديد نطاق تاريخ مخصص) -->
+          <div class="col-12 col-md-3">
+            <div class="input-group">
+              <span class="input-group-text bg-white border-end-0 text-muted px-2" style="font-size: 11px;">من</span>
+              <input type="date" id="filterStartDate" class="form-control border-start-0 border-end-0 px-1" onchange="filterData()" style="font-size: 11px; padding: 0.375rem 0.25rem;">
+              <span class="input-group-text bg-white border-start-0 border-end-0 text-muted px-2" style="font-size: 11px;">إلى</span>
+              <input type="date" id="filterEndDate" class="form-control border-start-0 px-1" onchange="filterData()" style="font-size: 11px; padding: 0.375rem 0.25rem;">
+            </div>
+          </div>
+
+          <!-- ترتيب البيانات -->
+          <div class="col-6 col-md-1">
+            <select id="sortBy" class="form-select px-1 text-center" onchange="filterData()" style="font-size: 11px;">
+              <option value="days-asc">تصاعدي</option>
+              <option value="days-desc">تنازلي</option>
+              <option value="category">القسم</option>
+              <option value="procedure">الإجراء</option>
+            </select>
+          </div>
+
+          <!-- تصفير الفلاتر -->
+          <div class="col-6 col-md-1 text-end">
+            <button class="btn btn-outline-secondary w-100 px-1 text-center" onclick="resetFilters()" style="font-size: 11px; padding: 0.375rem 0.25rem;" title="تصفير كل فلاتر البحث والعودة للحالة الافتراضية">
+              <i class="bi bi-trash-fill"></i> تصفير
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- التنبيهات الفورية النشطة (شريط تحذير سريع إن وجد منتهي أو تنبيه فوري) -->
+    <div id="urgentAlertBar" class="alert alert-danger d-none align-items-center justify-content-between p-3 border-0 shadow-sm mb-4" role="alert">
+      <div class="d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-octagon-fill fs-4 animate-bounce"></i>
+        <div>
+          <strong class="d-block">تنبيهات فورية معلقة!</strong>
+          <span class="small" id="urgentAlertText">هناك بعض الإجراءات منتهية الصلاحية أو متبقي عليها أقل من 30 يوماً وتتطلب تدخلاً عاجلاً.</span>
+        </div>
+      </div>
+      <button class="btn btn-sm btn-outline-danger" onclick="viewUrgentOnly()">عرض التحذيرات فقط</button>
+    </div>
+
+    <!-- قسم عرض البيانات الأساسي -->
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-white py-3 d-flex align-items-center justify-content-between border-0">
+        <h5 class="mb-0 fw-bold text-slate-800">
+          <i class="bi bi-list-task me-1 text-primary"></i> قائمة الإجراءات والمتابعات
+        </h5>
+        <div class="d-flex align-items-center gap-2">
+          <button class="btn btn-light btn-sm px-3" onclick="refreshData()" title="مزامنة وتحديث البيانات من Google Sheet">
+            <i class="bi bi-arrow-clockwise me-1" id="refreshIcon"></i> تحديث ومزامنة الشيت
+          </button>
+        </div>
+      </div>
+      
+      <div class="card-body p-0">
+        <!-- شاشة التحميل الدائرية -->
+        <div id="loadingState" class="text-center py-5">
+          <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+            <span class="visually-hidden">جاري التحميل...</span>
+          </div>
+          <p class="mt-3 text-muted">جاري تحميل البيانات وتحديث حسابات الأيام من Google Sheets...</p>
+        </div>
+
+        <!-- حالة البيانات فارغة -->
+        <div id="emptyState" class="text-center py-5 d-none">
+          <img src="https://cdn-icons-png.flaticon.com/512/7486/7486744.png" alt="No Data" class="mb-3 opacity-50" style="max-width: 120px;">
+          <h5 class="fw-bold text-slate-600">لا توجد إجراءات حالياً</h5>
+          <p class="text-muted small">ابدأ بإضافة أول إجراء للمتابعة وسيظهر هنا مباشرة.</p>
+          <button class="btn btn-primary btn-sm px-4 mt-2" onclick="openAddModal()">
+            <i class="bi bi-plus-circle me-1"></i> إضافة إجراء جديد
+          </button>
+        </div>
+
+        <!-- جدول العرض للكمبيوتر والشاشات المتوسطة -->
+        <div class="table-responsive d-none d-md-block" id="desktopView">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-slate">
+              <tr>
+                <th style="width: 140px;">القسم</th>
+                <th style="width: 180px;">الإجراء</th>
+                <th>التفاصيل والملاحظات</th>
+                <th style="width: 130px;">تاريخ الموعد</th>
+                <th style="width: 140px;" class="text-center">الأيام المتبقية</th>
+                <th style="width: 130px;" class="text-center">الحالة</th>
+                <th style="width: 180px;" class="text-center">الإجراءات</th>
+              </tr>
+            </thead>
+            <tbody id="renewalsTableBody">
+              <!-- سيتم ملء البيانات هنا جافا سكربت -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- قائمة الكروت للجوال والأجهزة اللوحية الصغيرة -->
+        <div class="p-3 d-md-none" id="mobileView">
+          <div class="row g-3" id="renewalsCardsContainer">
+            <!-- سيتم ملء البيانات هنا جافا سكربت -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- مودال (Modal) إضافة أو تعديل إجراء -->
+  <div class="modal fade" id="renewalModal" tabindex="-1" aria-labelledby="renewalModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+      <div class="modal-content border-0 shadow">
+        <div class="modal-header bg-slate-900 text-white border-0">
+          <h5 class="modal-title fw-bold" id="renewalModalLabel">إضافة إجراء جديد</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <form id="renewalForm" onsubmit="saveRenewal(event)">
+          <div class="modal-body p-4">
+            <!-- معرّف الإجراء المخفي للتعديل -->
+            <input type="hidden" id="renewalId">
+            <input type="hidden" id="attachmentUrlHidden">
+
+            <div class="row g-3">
+              <!-- القسم -->
+              <div class="col-md-6">
+                <label for="formCategory" class="form-label fw-semibold text-slate-700">القسم</label>
+                <select id="formCategory" class="form-select" required onchange="onCategoryChange()">
+                  <option value="" disabled selected>اختر القسم...</option>
+                  <option value="التعاقدات">التعاقدات</option>
+                  <option value="مكاتب ومستودعات">مكاتب ومستودعات</option>
+                  <option value="متابعة الموظف">متابعة الموظف</option>
+                  <option value="السيارات">السيارات</option>
+                  <option value="تنبيهات عامة">تنبيهات عامة</option>
+                </select>
+              </div>
+
+              <!-- الإجراء -->
+              <div class="col-md-6">
+                <label for="formProcedure" class="form-label fw-semibold text-slate-700">الإجراء المتابع</label>
+                <select id="formProcedure" class="form-select" required onchange="onProcedureChange()">
+                  <option value="" disabled selected>اختر الإجراء...</option>
+                </select>
+              </div>
+
+              <!-- نوع المتابعة (تاريخ الصلاحية المطلوب) -->
+              <div class="col-md-6">
+                <label for="formTrackingType" class="form-label fw-semibold text-slate-700">نوع المتابعة (نوع التاريخ)</label>
+                <input type="text" id="formTrackingType" class="form-control" placeholder="مثال: تاريخ انتهاء التعاقد، الرخصة..." required>
+              </div>
+
+              <!-- تاريخ الموعد -->
+              <div class="col-md-6">
+                <label for="formDate" class="form-label fw-semibold text-slate-700" id="formDateLabel">التاريخ</label>
+                <input type="date" id="formDate" class="form-control" required>
+              </div>
+
+              <!-- التفاصيل -->
+              <div class="col-12">
+                <label for="formDetails" class="form-label fw-semibold text-slate-700">تفاصيل الإجراء</label>
+                <textarea id="formDetails" class="form-control" rows="2" placeholder="أدخل تفاصيل التجديد، اسم الموظف، رقم السيارة، رقم العقد... إلخ" required></textarea>
+              </div>
+
+              <!-- التنبيه والجدولة -->
+              <div class="col-md-6">
+                <label for="formAlert" class="form-label fw-semibold text-slate-700">تفعيل التنبيه والربط بالتقويم؟</label>
+                <select id="formAlert" class="form-select" required onchange="toggleAlertDays()">
+                  <option value="نعم" selected>نعم - تفعيل التنبيه والإيميل والتقويم</option>
+                  <option value="لا">لا - بدون تنبيه (تذكير صامت)</option>
+                </select>
+                <span class="small text-muted mt-1 d-block"><i class="bi bi-info-circle"></i> سيتم جدولة الموعد مسبقاً قبل 60 و 30 و 7 أيام في تقويم Google وإرسال تنبيه بالبريد الإلكتروني.</span>
+              </div>
+
+              <!-- عدد أيام التنبيه (اختياري إضافي) -->
+              <div class="col-md-6" id="alertDaysGroup">
+                <label class="form-label fw-semibold text-slate-700">أيام التنبيه المسبق في التقويم</label>
+                <div class="p-2 border rounded bg-light text-slate-600 small">
+                  <i class="bi bi-bell-fill text-warning me-1"></i> يتم التنبيه تلقائياً مسبقاً قبل:
+                  <div class="d-flex gap-2 mt-1 fw-bold text-slate-800">
+                    <span class="badge bg-secondary">60 يوم</span>
+                    <span class="badge bg-secondary">30 يوم</span>
+                    <span class="badge bg-secondary">7 أيام</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- رفع ملف المرفقات -->
+              <div class="col-12">
+                <label for="formAttachment" class="form-label fw-semibold text-slate-700">مرفق مستند (PDF أو صورة)</label>
+                <div class="input-group">
+                  <input type="file" id="formAttachment" class="form-control" accept="image/*,application/pdf" onchange="handleFileSelected(event)">
+                </div>
+                <div id="fileUploadStatus" class="small text-muted mt-1"></div>
+                <div id="currentAttachmentPreview" class="mt-2 d-none">
+                  <span class="badge bg-light text-slate-700 border p-2">
+                    <i class="bi bi-file-earmark-check text-success me-1"></i> هناك ملف مرفوع حالياً:
+                    <a id="attachmentPreviewLink" href="#" target="_blank" class="text-primary fw-bold text-decoration-underline ms-2">استعراض الملف المرفق</a>
+                  </span>
+                </div>
+              </div>
+
+              <!-- ملاحظات إضافية -->
+              <div class="col-12">
+                <label for="formNotes" class="form-label fw-semibold text-slate-700">ملاحظات إضافية</label>
+                <textarea id="formNotes" class="form-control" rows="2" placeholder="أي ملاحظات أخرى تود تسجيلها..."></textarea>
+              </div>
+            </div>
+
+          </div>
+          <div class="modal-footer border-0 bg-light p-3">
+            <button type="button" class="btn btn-secondary px-4" data-bs-dismiss="modal">إلغاء</button>
+            <button type="submit" id="saveBtn" class="btn btn-primary px-4 d-flex align-items-center gap-2">
+              <i class="bi bi-save"></i>
+              <span>حفظ الإجراء</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- مودال تأكيد الحذف -->
+  <div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content border-0 shadow">
+        <div class="modal-header bg-danger text-white border-0 py-2">
+          <h6 class="modal-title fw-bold">تأكيد حذف الإجراء</h6>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-3 text-center">
+          <i class="bi bi-exclamation-triangle text-danger fs-1 mb-2 d-block"></i>
+          <p class="mb-0 text-slate-700 fw-semibold">هل أنت متأكد من رغبتك في حذف هذا الإجراء نهائياً من ورقة العمل وتقويم Google؟</p>
+          <span class="small text-muted block-sub mt-1 d-block">لا يمكن التراجع عن هذا الإجراء لاحقاً.</span>
+        </div>
+        <div class="modal-footer border-0 p-2 bg-light d-flex justify-content-center gap-2">
+          <button type="button" class="btn btn-sm btn-secondary px-3" data-bs-dismiss="modal">إلغاء</button>
+          <button type="button" id="confirmDeleteBtn" class="btn btn-sm btn-danger px-3">نعم، احذف</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- إشعار Toast عائم للعمليات الناجحة أو الأخطاء -->
+  <div class="toast-container position-fixed bottom-0 start-0 p-3">
+    <div id="liveToast" class="toast align-items-center text-white bg-slate-900 border-0 shadow-lg" role="alert" aria-live="assertive" aria-atomic="true">
+      <div class="d-flex">
+        <div class="toast-body d-flex align-items-center gap-2">
+          <i id="toastIcon" class="bi bi-info-circle-fill"></i>
+          <span id="toastMessage">تمت العملية بنجاح!</span>
+        </div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+      </div>
+    </div>
+  </div>
+
+  </div> <!-- نهاية appContainer -->
+
+  <!-- مكتبات جافا سكربت (Bootstrap JS Bundle) -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <!-- تضمين جافا سكربت المخصصة للتفاعل من ملف javascript.html -->
+  <?!= include('javascript'); ?>
+</body>
+</html>
