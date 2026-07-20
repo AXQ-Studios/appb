@@ -1,0 +1,891 @@
+<script>
+  /**
+   * جافا سكربت التفاعلية لنظام متابعة التجديدات والإجراءات (Google Apps Script Frontend)
+   */
+
+  // الهيكل الديناميكي للأقسام والإجراءات ونوع المتابعة الافتراضي وحالة التنبيه الافتراضية
+  const CATEGORY_STRUCTURE = {
+    "التعاقدات": [
+      { name: "تعاقدات", trackingType: "تاريخ انتهاء التعاقد", defaultAlert: "نعم" },
+      { name: "عقد عمل", trackingType: "تاريخ انتهاء عقد العمل", defaultAlert: "نعم" }
+    ],
+    "مكاتب ومستودعات": [
+      { name: "عقد الإيجار", trackingType: "تاريخ انتهاء عقد الإيجار", defaultAlert: "نعم" },
+      { name: "رخصة البلدية", trackingType: "تاريخ انتهاء الرخصة", defaultAlert: "نعم" },
+      { name: "رخصة الدفاع المدني", trackingType: "تاريخ انتهاء الرخصة", defaultAlert: "نعم" },
+      { name: "رخصة النشاط التجاري", trackingType: "تاريخ انتهاء الرخصة", defaultAlert: "نعم" }
+    ],
+    "متابعة الموظف": [
+      { name: "إقامة", trackingType: "تاريخ انتهاء الإقامة", defaultAlert: "نعم" },
+      { name: "الأجازات وصرف بدلاتها", trackingType: "التاريخ المتوقع للإجازة وصرف البدلات", defaultAlert: "نعم" },
+      { name: "تأمين طبي", trackingType: "تاريخ انتهاء التأمين", defaultAlert: "نعم" },
+      { name: "عقد عمل", trackingType: "تاريخ انتهاء العقد", defaultAlert: "نعم" }
+    ],
+    "السيارات": [
+      { name: "استمارة السيارة", trackingType: "تاريخ انتهاء الاستمارة", defaultAlert: "نعم" },
+      { name: "حوادث", trackingType: "تاريخ الحادث (لا يوجد تنبيه)", defaultAlert: "لا", disableAlert: true },
+      { name: "كفرات", trackingType: "تاريخ التغيير القادم بالكفرات", defaultAlert: "نعم" },
+      { name: "فحص دوري", trackingType: "تاريخ الفحص الدوري القادم", defaultAlert: "نعم" },
+      { name: "غيار زيت وفلتر", trackingType: "تاريخ اخر تغير زيت وفلتر", defaultAlert: "لا", disableAlert: true },
+      { name: "تغير الكفرات", trackingType: "تاريخ المقدر لتغير الكفرات", defaultAlert: "نعم" }
+    ],
+    "تنبيهات عامة": [
+      { name: "تنبيه عام", trackingType: "التاريخ المتوقع للإجراء", defaultAlert: "نعم" }
+    ]
+  };
+
+  // مصفوفة حفظ البيانات الكلية المسترجعة من السيرفر
+  let allRenewals = [];
+  let selectedFileBase64 = null;
+  let selectedFileName = "";
+  let bootstrapModal = null;
+  let deleteModal = null;
+  let activeStatusFilter = ""; // لحفظ فلتر الضغط المباشر على كروت الإحصائيات
+
+  // تهيئة النظام عند تحميل الصفحة بالكامل
+  document.addEventListener("DOMContentLoaded", function() {
+    // عرض التاريخ الحالي باللغة العربية
+    displayTodayDate();
+    
+    // تهيئة كائنات المودال من Bootstrap
+    bootstrapModal = new bootstrap.Modal(document.getElementById('renewalModal'));
+    deleteModal = new bootstrap.Modal(document.getElementById('deleteConfirmModal'));
+    
+    // فحص حالة تسجيل الدخول وتنشيط الشاشة المناسبة
+    initGasApp();
+  });
+
+  /**
+   * عرض تاريخ اليوم بالتنسيق العربي
+   */
+  function displayTodayDate() {
+    const today = new Date();
+    const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+    document.getElementById("currentDate").innerText = today.toLocaleDateString('ar-EG', options);
+  }
+
+  /**
+   * جلب البيانات ومزامنتها من Google Sheets
+   */
+  function refreshData() {
+    showLoading(true);
+    setRefreshIconSpinning(true);
+    
+    google.script.run
+      .withSuccessHandler(onGetRenewalsSuccess)
+      .withFailureHandler(onGetRenewalsFailure)
+      .getRenewals();
+  }
+
+  function setRefreshIconSpinning(spin) {
+    const icon = document.getElementById("refreshIcon");
+    if (spin) {
+      icon.classList.add("bi-spin"); // فئة الدوران
+      icon.style.animation = "spin 1s linear infinite";
+    } else {
+      icon.classList.remove("bi-spin");
+      icon.style.animation = "";
+    }
+  }
+
+  // إضافة ستايل خاص بالدوران ديناميكياً
+  const styleSpin = document.createElement('style');
+  styleSpin.innerHTML = `@keyframes spin { 100% { transform:rotate(-360deg); } }`;
+  document.head.appendChild(styleSpin);
+
+  /**
+   * استلام البيانات بنجاح من السيرفر
+   */
+  function onGetRenewalsSuccess(data) {
+    allRenewals = data;
+    showLoading(false);
+    setRefreshIconSpinning(false);
+    
+    // حساب الإحصائيات
+    calculateStats(data);
+    
+    // تطبيق الفلترة والعرض
+    filterData();
+  }
+
+  /**
+   * فشل جلب البيانات من السيرفر
+   */
+  function onGetRenewalsFailure(error) {
+    showLoading(false);
+    setRefreshIconSpinning(false);
+    showToast("⚠️ خطأ في جلب البيانات: " + error.message, "danger");
+  }
+
+  /**
+   * إظهار/إخفاء شاشة التحميل
+   */
+  function showLoading(show) {
+    const loading = document.getElementById("loadingState");
+    const empty = document.getElementById("emptyState");
+    const desktop = document.getElementById("desktopView");
+    const mobile = document.getElementById("mobileView");
+    
+    if (show) {
+      loading.classList.remove("d-none");
+      empty.classList.add("d-none");
+      desktop.classList.add("d-none");
+      mobile.classList.add("d-none");
+    } else {
+      loading.classList.add("d-none");
+    }
+  }
+
+  /**
+   * حساب الإحصائيات وعرض الأرقام على كروت الـ Dashboard
+   */
+  function calculateStats(data) {
+    let active = 0;   // ساري
+    let warning = 0;  // جهز الإجراءات
+    let urgent = 0;   // تنبيه فوري
+    let expired = 0;  // منتهي
+
+    data.forEach(item => {
+      if (item.status === "🟢 ساري") active++;
+      else if (item.status === "🟡 جهز الإجراءات") warning++;
+      else if (item.status === "🔴 تنبيه فوري") urgent++;
+      else if (item.status === "⚫ منتهي") expired++;
+    });
+
+    document.getElementById("countActive").innerText = active;
+    document.getElementById("countWarning").innerText = warning;
+    document.getElementById("countUrgent").innerText = urgent;
+    document.getElementById("countExpired").innerText = expired;
+
+    // إظهار شريط التنبيهات السريعة إذا كان هناك عناصر عاجلة أو منتهية
+    const alertBar = document.getElementById("urgentAlertBar");
+    const urgentCount = urgent + expired;
+    if (urgentCount > 0) {
+      alertBar.classList.remove("d-none");
+      alertBar.classList.add("d-flex");
+      document.getElementById("urgentAlertText").innerText = `يوجد لديك عدد (${urgent}) إجراءات بحالة تنبيه عاجل، و (${expired}) إجراءات منتهية بالفعل. يرجى تدارك الإجراءات العاجلة.`;
+    } else {
+      alertBar.classList.add("d-none");
+      alertBar.classList.remove("d-flex");
+    }
+  }
+
+  /**
+   * الفلترة السريعة بالضغط مباشرة على الكروت الإحصائية
+   */
+  function filterByStatus(status) {
+    const filterSelect = document.getElementById("filterStatus");
+    if (filterSelect.value === status) {
+      filterSelect.value = ""; // إلغاء الفلتر إذا تم الضغط عليه مجدداً
+    } else {
+      filterSelect.value = status;
+    }
+    filterData();
+  }
+
+  /**
+   * تفعيل فلتر التحذيرات السريعة فقط من الشريط العلوي
+   */
+  function viewUrgentOnly() {
+    const searchInput = document.getElementById("searchInput");
+    const categorySelect = document.getElementById("filterCategory");
+    const statusSelect = document.getElementById("filterStatus");
+    const startDateInput = document.getElementById("filterStartDate");
+    const endDateInput = document.getElementById("filterEndDate");
+    
+    // تصفير الخيارات وتفعيل التحذيرات
+    searchInput.value = "";
+    categorySelect.value = "";
+    if (startDateInput) startDateInput.value = "";
+    if (endDateInput) endDateInput.value = "";
+    statusSelect.value = "🔴 تنبيه فوري"; // نفلتر التنبيه الفوري، أو نتركه يدوي
+    
+    filterData();
+    // نقوم بتصفية قائمة الحالات لعرض كلاً من منتهي وتنبيه فوري
+    const filtered = allRenewals.filter(item => item.status === "🔴 تنبيه فوري" || item.status === "⚫ منتهي");
+    renderData(filtered);
+  }
+
+  /**
+   * تصفير جميع فلاتر البحث والعودة للحالة الافتراضية
+   */
+  function resetFilters() {
+    const searchInput = document.getElementById("searchInput");
+    const categorySelect = document.getElementById("filterCategory");
+    const statusSelect = document.getElementById("filterStatus");
+    const startDateInput = document.getElementById("filterStartDate");
+    const endDateInput = document.getElementById("filterEndDate");
+    const sortBySelect = document.getElementById("sortBy");
+
+    if (searchInput) searchInput.value = "";
+    if (categorySelect) categorySelect.value = "";
+    if (statusSelect) statusSelect.value = "";
+    if (startDateInput) startDateInput.value = "";
+    if (endDateInput) endDateInput.value = "";
+    if (sortBySelect) sortBySelect.value = "days-asc";
+
+    filterData();
+    showToast("🧹 تم تصفير جميع فلاتر البحث والمدة بنجاح!", "info");
+  }
+
+  /**
+   * فلترة وترتيب البيانات
+   */
+  function filterData() {
+    const searchVal = document.getElementById("searchInput").value.toLowerCase().trim();
+    const categoryVal = document.getElementById("filterCategory").value;
+    const statusVal = document.getElementById("filterStatus").value;
+    const startDateVal = document.getElementById("filterStartDate") ? document.getElementById("filterStartDate").value : "";
+    const endDateVal = document.getElementById("filterEndDate") ? document.getElementById("filterEndDate").value : "";
+    const sortBy = document.getElementById("sortBy").value;
+
+    let filtered = allRenewals.filter(item => {
+      // 1. فلتر البحث النصي
+      const matchesSearch = !searchVal || 
+                            item.category.toLowerCase().includes(searchVal) || 
+                            item.procedure.toLowerCase().includes(searchVal) || 
+                            item.details.toLowerCase().includes(searchVal) || 
+                            (item.notes && item.notes.toLowerCase().includes(searchVal)) ||
+                            item.trackingType.toLowerCase().includes(searchVal);
+      
+      // 2. فلتر القسم
+      const matchesCategory = !categoryVal || item.category === categoryVal;
+      
+      // 3. فلتر الحالة
+      const matchesStatus = !statusVal || item.status === statusVal;
+      
+      // 4. فلتر المدة الكاملة (تاريخ بدء ونهاية)
+      let matchesRange = true;
+      if (item.date) {
+        if (startDateVal && endDateVal) {
+          matchesRange = item.date >= startDateVal && item.date <= endDateVal;
+        } else if (startDateVal) {
+          matchesRange = item.date >= startDateVal;
+        } else if (endDateVal) {
+          matchesRange = item.date <= endDateVal;
+        }
+      } else if (startDateVal || endDateVal) {
+        matchesRange = false; // لا يوجد تاريخ ومحدد فلتر نطاق
+      }
+
+      return matchesSearch && matchesCategory && matchesStatus && matchesRange;
+    });
+
+    // الترتيب
+    if (sortBy === "days-asc") {
+      filtered.sort((a, b) => a.daysLeft - b.daysLeft);
+    } else if (sortBy === "days-desc") {
+      filtered.sort((a, b) => b.daysLeft - a.daysLeft);
+    } else if (sortBy === "category") {
+      filtered.sort((a, b) => a.category.localeCompare(b.category, 'ar'));
+    } else if (sortBy === "procedure") {
+      filtered.sort((a, b) => a.procedure.localeCompare(b.procedure, 'ar'));
+    }
+
+    renderData(filtered);
+  }
+
+  /**
+   * رسم البيانات في الواجهة (الجدول للكمبيوتر، والكروت للجوال)
+   */
+  function renderData(data) {
+    const emptyState = document.getElementById("emptyState");
+    const desktopView = document.getElementById("desktopView");
+    const mobileView = document.getElementById("mobileView");
+    const tableBody = document.getElementById("renewalsTableBody");
+    const cardsContainer = document.getElementById("renewalsCardsContainer");
+
+    if (data.length === 0) {
+      emptyState.classList.remove("d-none");
+      desktopView.classList.add("d-none");
+      mobileView.classList.add("d-none");
+      return;
+    }
+
+    emptyState.classList.add("d-none");
+    desktopView.classList.remove("d-none");
+    mobileView.classList.remove("d-none");
+
+    // تنظيف الحاويات
+    tableBody.innerHTML = "";
+    cardsContainer.innerHTML = "";
+
+    data.forEach(item => {
+      // تحديد الفئات اللونية ونصوص الأيام المتبقية
+      let daysClass = "";
+      let statusClass = "";
+      let daysText = "";
+
+      if (item.daysLeft < 0) {
+        daysClass = "days-expired";
+        statusClass = "bg-slate-900 text-white";
+        daysText = `منتهي (${Math.abs(item.daysLeft)} يوم)`;
+      } else if (item.daysLeft >= 0 && item.daysLeft <= 60) {
+        daysClass = "days-red text-danger fw-bold animate-pulse";
+        statusClass = "bg-danger text-white";
+        daysText = `عاجل (${item.daysLeft} يوم)`;
+      } else if (item.daysLeft >= 61 && item.daysLeft <= 70) {
+        daysClass = "days-yellow text-warning-emphasis fw-semibold";
+        statusClass = "bg-warning text-dark";
+        daysText = `جهز الإجراءات (${item.daysLeft} يوم)`;
+      } else {
+        daysClass = "days-green text-success";
+        statusClass = "bg-success text-white";
+        daysText = `ساري (${item.daysLeft} يوم)`;
+      }
+
+      // تحديد أيقونة القسم
+      let catIcon = "bi-tag-fill";
+      if (item.category === "التعاقدات") catIcon = "bi-file-earmark-text-fill text-primary";
+      else if (item.category === "مكاتب ومستودعات") catIcon = "bi-building-fill text-info";
+      else if (item.category === "متابعة الموظف") catIcon = "bi-people-fill text-success";
+      else if (item.category === "السيارات") catIcon = "bi-car-front-fill text-warning";
+      else if (item.category === "تنبيهات عامة") catIcon = "bi-bell-fill text-danger";
+
+      // 1. رسم صف الجدول للكمبيوتر
+      const rowHtml = `
+        <tr>
+          <td>
+            <span class="badge-category">
+              <i class="bi ${catIcon}"></i> ${item.category}
+            </span>
+          </td>
+          <td>
+            <div class="fw-bold text-slate-900">${item.procedure}</div>
+            <span class="small text-muted">${item.trackingType}</span>
+          </td>
+          <td>
+            <div class="small fw-semibold text-slate-800">${item.details}</div>
+            ${item.notes ? `<div class="text-muted small mt-1"><i class="bi bi-chat-left-dots-fill me-1"></i> ${item.notes}</div>` : ''}
+          </td>
+          <td>
+            <span class="small font-monospace"><i class="bi bi-calendar-event me-1"></i>${item.date}</span>
+          </td>
+          <td class="text-center font-monospace">
+            <span class="days-left-count ${daysClass}">${daysText}</span>
+          </td>
+          <td class="text-center">
+            <span class="badge badge-status ${statusClass}">${item.status.replace(/🟢|🟡|🔴|⚫/g, '').trim()}</span>
+          </td>
+          <td class="text-center">
+            <div class="d-flex align-items-center justify-content-center gap-1">
+              ${item.attachmentUrl ? `
+                <a href="${item.attachmentUrl}" target="_blank" class="btn btn-sm btn-outline-info btn-action" title="فتح الملف المرفق">
+                  <i class="bi bi-file-earmark-arrow-down"></i>
+                </a>` : ''}
+              ${item.calendarEventId ? `
+                <a href="https://calendar.google.com" target="_blank" class="btn btn-sm btn-outline-secondary btn-action" title="مجدول في التقويم">
+                  <i class="bi bi-calendar3-week text-primary"></i>
+                </a>` : ''}
+              <button onclick="openEditModal('${item.id}')" class="btn btn-sm btn-outline-primary btn-action" title="تعديل الإجراء">
+                <i class="bi bi-pencil-fill"></i>
+              </button>
+              <button onclick="confirmDelete('${item.id}')" class="btn btn-sm btn-outline-danger btn-action" title="حذف الإجراء">
+                <i class="bi bi-trash3-fill"></i>
+              </button>
+            </div>
+          </td>
+        </tr>
+      `;
+      tableBody.insertAdjacentHTML('beforeend', rowHtml);
+
+      // 2. رسم كرت للجوال
+      const cardHtml = `
+        <div class="col-12">
+          <div class="card mobile-card border-0 shadow-sm p-3">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <span class="badge-category">
+                <i class="bi ${catIcon}"></i> ${item.category}
+              </span>
+              <span class="badge badge-status ${statusClass}">${item.status}</span>
+            </div>
+            
+            <h6 class="fw-bold text-slate-900 mb-1">${item.procedure}</h6>
+            <div class="text-muted small mb-2">${item.trackingType} - ${item.details}</div>
+            
+            ${item.notes ? `<p class="small text-slate-500 bg-light p-2 rounded mb-2"><i class="bi bi-chat-left-dots me-1"></i> ${item.notes}</p>` : ''}
+            
+            <hr class="my-2 border-slate-100">
+            
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <span class="small text-muted d-block">تاريخ الموعد:</span>
+                <span class="small font-monospace fw-bold"><i class="bi bi-calendar3 me-1"></i>${item.date}</span>
+              </div>
+              <div class="text-end">
+                <span class="small text-muted d-block">متبقي:</span>
+                <span class="small font-monospace fw-bold ${daysClass}">${daysText}</span>
+              </div>
+            </div>
+            
+            <div class="d-flex justify-content-end gap-1 mt-3 pt-2 border-top">
+              ${item.attachmentUrl ? `
+                <a href="${item.attachmentUrl}" target="_blank" class="btn btn-sm btn-outline-info px-3 d-flex align-items-center gap-1">
+                  <i class="bi bi-file-earmark-arrow-down"></i> متاح
+                </a>` : ''}
+              <button onclick="openEditModal('${item.id}')" class="btn btn-sm btn-outline-primary px-3">
+                <i class="bi bi-pencil"></i> تعديل
+              </button>
+              <button onclick="confirmDelete('${item.id}')" class="btn btn-sm btn-outline-danger btn-action">
+                <i class="bi bi-trash3"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+      cardsContainer.insertAdjacentHTML('beforeend', cardHtml);
+    });
+  }
+
+  /**
+   * معالجة تغيير القسم في المودال لبناء قائمة الإجراءات ديناميكياً
+   */
+  function onCategoryChange() {
+    const category = document.getElementById("formCategory").value;
+    const procedureSelect = document.getElementById("formProcedure");
+    
+    // تصفير الخيارات
+    procedureSelect.innerHTML = '<option value="" disabled selected>اختر الإجراء...</option>';
+    
+    if (category && CATEGORY_STRUCTURE[category]) {
+      CATEGORY_STRUCTURE[category].forEach(proc => {
+        const opt = document.createElement("option");
+        opt.value = proc.name;
+        opt.innerText = proc.name;
+        procedureSelect.appendChild(opt);
+      });
+    }
+    
+    document.getElementById("formTrackingType").value = "";
+  }
+
+  /**
+   * معالجة تغيير الإجراء لملء نوع التاريخ ونوع التنبيه تلقائياً
+   */
+  function onProcedureChange() {
+    const category = document.getElementById("formCategory").value;
+    const procedure = document.getElementById("formProcedure").value;
+    const trackingInput = document.getElementById("formTrackingType");
+    const alertSelect = document.getElementById("formAlert");
+    const dateLabel = document.getElementById("formDateLabel");
+
+    if (category && procedure && CATEGORY_STRUCTURE[category]) {
+      const procInfo = CATEGORY_STRUCTURE[category].find(p => p.name === procedure);
+      if (procInfo) {
+        trackingInput.value = procInfo.trackingType;
+        alertSelect.value = procInfo.defaultAlert;
+        
+        // تعديل نص حقل التاريخ ليتطابق مع الإجراء
+        dateLabel.innerText = "تاريخ الاستحقاق (" + procInfo.trackingType + ")";
+        
+        // إلغاء تفعيل التنبيه إذا كان لا يسمح بالتنبيه
+        if (procInfo.disableAlert) {
+          alertSelect.value = "لا";
+          alertSelect.disabled = true;
+        } else {
+          alertSelect.disabled = false;
+        }
+        
+        toggleAlertDays();
+      }
+    }
+  }
+
+  /**
+   * إخفاء أو إظهار مربع أيام التنبيه
+   */
+  function toggleAlertDays() {
+    const alertVal = document.getElementById("formAlert").value;
+    const alertDaysGroup = document.getElementById("alertDaysGroup");
+    if (alertVal === "نعم") {
+      alertDaysGroup.classList.remove("d-none");
+    } else {
+      alertDaysGroup.classList.add("d-none");
+    }
+  }
+
+  /**
+   * فتح نافذة إضافة إجراء جديد وتصفير الحقول
+   */
+  function openAddModal() {
+    document.getElementById("renewalModalLabel").innerText = "إضافة إجراء ومتابعة جديدة";
+    document.getElementById("renewalForm").reset();
+    document.getElementById("renewalId").value = "";
+    document.getElementById("attachmentUrlHidden").value = "";
+    document.getElementById("formAlert").disabled = false;
+    document.getElementById("formProcedure").innerHTML = '<option value="" disabled selected>اختر الإجراء بعد تحديد القسم...</option>';
+    
+    document.getElementById("currentAttachmentPreview").classList.add("d-none");
+    document.getElementById("fileUploadStatus").innerText = "";
+    selectedFileBase64 = null;
+    selectedFileName = "";
+    
+    toggleAlertDays();
+    bootstrapModal.show();
+  }
+
+  /**
+   * فتح نافذة تعديل إجراء موجود وتعبئة البيانات
+   */
+  function openEditModal(id) {
+    const item = allRenewals.find(x => x.id === id);
+    if (!item) return;
+
+    document.getElementById("renewalModalLabel").innerText = "تعديل الإجراء - " + item.procedure;
+    document.getElementById("renewalId").value = item.id;
+    
+    // ضبط القسم وتفعيل حدث التغيير لملء قائمة الإجراءات
+    document.getElementById("formCategory").value = item.category;
+    onCategoryChange();
+    
+    // ضبط الإجراء ونوع المتابعة والتاريخ والتفاصيل والملاحظات والتنبيه
+    document.getElementById("formProcedure").value = item.procedure;
+    document.getElementById("formTrackingType").value = item.trackingType;
+    document.getElementById("formDate").value = item.date;
+    document.getElementById("formDetails").value = item.details;
+    document.getElementById("formNotes").value = item.notes;
+    document.getElementById("formAlert").value = item.alert;
+    document.getElementById("attachmentUrlHidden").value = item.attachmentUrl || "";
+
+    // التحقق من الملف المرفق المرفوع مسبقاً
+    const previewContainer = document.getElementById("currentAttachmentPreview");
+    if (item.attachmentUrl) {
+      previewContainer.classList.remove("d-none");
+      document.getElementById("attachmentPreviewLink").href = item.attachmentUrl;
+    } else {
+      previewContainer.classList.add("d-none");
+    }
+
+    document.getElementById("fileUploadStatus").innerText = "";
+    selectedFileBase64 = null;
+    selectedFileName = "";
+
+    // تفعيل حسابات التنبيه
+    const procInfo = CATEGORY_STRUCTURE[item.category]?.find(p => p.name === item.procedure);
+    if (procInfo?.disableAlert) {
+      document.getElementById("formAlert").disabled = true;
+    } else {
+      document.getElementById("formAlert").disabled = false;
+    }
+    
+    toggleAlertDays();
+    bootstrapModal.show();
+  }
+
+  /**
+   * قراءة الملف عند اختياره وتحويله لصيغة Base64 تمهيداً لرفعه إلى Drive
+   */
+  function handleFileSelected(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    // تحديد الحد الأقصى للملف: 5 ميجابايت لتجنب تجاوز حدود النقل في Apps Script
+    const maxSize = 5 * 1024 * 1024;
+    if (file.size > maxSize) {
+      showToast("⚠️ الملف كبير جداً! الحد الأقصى المسموح برَفعه هو 5 ميجابايت.", "danger");
+      event.target.value = "";
+      return;
+    }
+
+    const reader = new FileReader();
+    const statusText = document.getElementById("fileUploadStatus");
+    statusText.innerText = "جاري قراءة الملف وتجهيزه للرفع...";
+    
+    reader.onload = function(e) {
+      selectedFileBase64 = e.target.result;
+      selectedFileName = file.name;
+      statusText.innerHTML = `<span class="text-success fw-semibold"><i class="bi bi-check-circle-fill"></i> جاهز للرفع: ${file.name}</span>`;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  /**
+   * حفظ الإجراء (إضافة جديدة أو تحديث حالي)
+   */
+  function saveRenewal(event) {
+    event.preventDefault();
+    
+    const id = document.getElementById("renewalId").value;
+    const category = document.getElementById("formCategory").value;
+    const procedure = document.getElementById("formProcedure").value;
+    const trackingType = document.getElementById("formTrackingType").value;
+    const date = document.getElementById("formDate").value;
+    const details = document.getElementById("formDetails").value;
+    const alert = document.getElementById("formAlert").value;
+    const notes = document.getElementById("formNotes").value;
+    const currentAttachmentUrl = document.getElementById("attachmentUrlHidden").value;
+
+    const saveButton = document.getElementById("saveBtn");
+    saveButton.disabled = true;
+    saveButton.innerHTML = `<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> جاري الحفظ وتحديث التقويم...`;
+
+    // الدالة الداخلية لحفظ البيانات بعد التحقق من رفع المرفق أو تخطيه
+    const proceedToSave = (uploadedUrl) => {
+      const dataPayload = {
+        category: category,
+        procedure: procedure,
+        trackingType: trackingType,
+        date: date,
+        details: details,
+        alert: alert,
+        notes: notes,
+        attachmentUrl: uploadedUrl || currentAttachmentUrl || ""
+      };
+
+      if (id) {
+        // تعديل إجراء حالي
+        google.script.run
+          .withSuccessHandler(function(response) {
+            showToast("✅ تم تعديل الإجراء وتحديث البيانات والتقويم بنجاح!", "success");
+            bootstrapModal.hide();
+            refreshData();
+            resetSaveButton();
+          })
+          .withFailureHandler(function(err) {
+            showToast("⚠️ خطأ في التعديل: " + err.message, "danger");
+            resetSaveButton();
+          })
+          .updateRenewal(id, dataPayload);
+      } else {
+        // إضافة إجراء جديد
+        google.script.run
+          .withSuccessHandler(function(response) {
+            showToast("✅ تم إضافة الإجراء بنجاح وجدولته في التقويم!", "success");
+            bootstrapModal.hide();
+            refreshData();
+            resetSaveButton();
+          })
+          .withFailureHandler(function(err) {
+            showToast("⚠️ خطأ في الإضافة: " + err.message, "danger");
+            resetSaveButton();
+          })
+          .addRenewal(dataPayload);
+      }
+    };
+
+    // التحقق مما إذا كان هناك ملف مرفق يحتاج إلى الرفع إلى Google Drive أولاً
+    if (selectedFileBase64) {
+      google.script.run
+        .withSuccessHandler(function(driveFileUrl) {
+          proceedToSave(driveFileUrl);
+        })
+        .withFailureHandler(function(err) {
+          showToast("⚠️ فشل رفع المرفق إلى Drive: " + err.message + ". سيتم المتابعة بدون ملف.", "warning");
+          proceedToSave("");
+        })
+        .uploadFileToDrive(selectedFileBase64, selectedFileName);
+    } else {
+      proceedToSave("");
+    }
+  }
+
+  function resetSaveButton() {
+    const saveButton = document.getElementById("saveBtn");
+    saveButton.disabled = false;
+    saveButton.innerHTML = `<i class="bi bi-save"></i> حفظ الإجراء`;
+  }
+
+  // تخزين مؤقت لمعرّف السطر المراد حذفه
+  let renewalIdToDelete = null;
+
+  /**
+   * فتح مودال تأكيد الحذف
+   */
+  function confirmDelete(id) {
+    renewalIdToDelete = id;
+    deleteModal.show();
+  }
+
+  // ربط زر تأكيد الحذف
+  document.getElementById("confirmDeleteBtn").addEventListener("click", function() {
+    if (!renewalIdToDelete) return;
+    
+    const confirmBtn = document.getElementById("confirmDeleteBtn");
+    confirmBtn.disabled = true;
+    confirmBtn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> جاري الحذف...`;
+
+    google.script.run
+      .withSuccessHandler(function(response) {
+        showToast("🗑️ تم حذف الإجراء وحذف الموعد المرتبط بالتقويم بنجاح!", "success");
+        deleteModal.hide();
+        refreshData();
+        confirmBtn.disabled = false;
+        confirmBtn.innerText = "نعم، احذف";
+        renewalIdToDelete = null;
+      })
+      .withFailureHandler(function(err) {
+        showToast("⚠️ فشل في حذف الإجراء: " + err.message, "danger");
+        confirmBtn.disabled = false;
+        confirmBtn.innerText = "نعم، احذف";
+      })
+      .deleteRenewal(renewalIdToDelete);
+  });
+
+  /**
+   * إظهار رسائل التنبيه والتوست (Toast) العائمة
+   */
+  function showToast(message, type = "success") {
+    const toastEl = document.getElementById("liveToast");
+    const toastIcon = document.getElementById("toastIcon");
+    const toastMessage = document.getElementById("toastMessage");
+
+    // تنظيف الألوان السابقة وتحديد الألوان المناسبة
+    toastEl.className = "toast align-items-center text-white border-0 shadow-lg";
+    
+    if (type === "success") {
+      toastEl.classList.add("bg-success");
+      toastIcon.className = "bi bi-check-circle-fill fs-5";
+    } else if (type === "danger") {
+      toastEl.classList.add("bg-danger");
+      toastIcon.className = "bi bi-exclamation-octagon-fill fs-5";
+    } else if (type === "warning") {
+      toastEl.classList.add("bg-warning", "text-dark");
+      toastIcon.className = "bi bi-exclamation-triangle-fill fs-5";
+    } else {
+      toastEl.classList.add("bg-slate-900");
+      toastIcon.className = "bi bi-info-circle-fill fs-5";
+    }
+
+    toastMessage.innerText = message;
+    
+    const toast = new bootstrap.Toast(toastEl, { delay: 4000 });
+    toast.show();
+  }
+
+  /**
+   * دالة فحص والتحقق من حالة تسجيل الدخول على Apps Script
+   */
+  function checkGasLoginState() {
+    return localStorage.getItem("gas_renewal_is_logged_in") === "true";
+  }
+
+  /**
+   * تهيئة وبدء تشغيل واجهة التطبيق بناءً على حالة تسجيل الدخول
+   */
+  function initGasApp() {
+    const loginContainer = document.getElementById("loginContainer");
+    const appContainer = document.getElementById("appContainer");
+    const userEmailEl = document.getElementById("gasUserEmail");
+
+    if (checkGasLoginState()) {
+      // المستخدم مسجل دخوله بالفعل
+      const savedEmail = localStorage.getItem("gas_renewal_user_email") || "farmatrading.online@gmail.com";
+      if (userEmailEl) {
+        userEmailEl.innerText = savedEmail;
+      }
+      
+      // إخفاء شاشة تسجيل الدخول وإظهار شاشة التطبيق الرئيسية
+      if (loginContainer) loginContainer.style.display = "none";
+      if (appContainer) appContainer.style.display = "block";
+      
+      // جلب البيانات ومزامنتها من الشيت
+      refreshData();
+    } else {
+      // المستخدم غير مسجل دخوله
+      if (appContainer) appContainer.style.display = "none";
+      if (loginContainer) loginContainer.style.display = "block";
+    }
+  }
+
+  /**
+   * التعامل مع تقديم نموذج تسجيل الدخول
+   */
+  function handleGasLoginSubmit(event) {
+    if (event) event.preventDefault();
+
+    const emailInput = document.getElementById("gasLoginEmail");
+    const passwordInput = document.getElementById("gasLoginPassword");
+    const errorAlert = document.getElementById("loginErrorAlert");
+    const errorMsg = document.getElementById("loginErrorMsg");
+    const loginBtn = document.getElementById("gasLoginBtn");
+    const btnSpinner = document.getElementById("gasLoginBtnSpinner");
+    const btnText = document.getElementById("gasLoginBtnText");
+    const rememberMeCheck = document.getElementById("gasLoginRememberMe");
+
+    if (!emailInput || !passwordInput) return;
+
+    const email = emailInput.value.trim();
+    const password = passwordInput.value.trim();
+
+    // إخفاء أي تنبيه خطأ سابق
+    if (errorAlert) errorAlert.classList.add("d-none");
+
+    // التحقق المبدئي في العميل
+    if (!email || !password) {
+      showError("يرجى كتابة البريد الإلكتروني وكلمة المرور بالكامل.");
+      return;
+    }
+
+    // إظهار مؤشر التحميل والانتظار
+    if (loginBtn) loginBtn.disabled = true;
+    if (btnSpinner) btnSpinner.classList.remove("d-none");
+    if (btnText) btnText.innerText = "جاري التحقق من الشيت الفعلي...";
+
+    // نداء السيرفر بالـ Google Apps Script للتحقق من الشيت الفعلي مباشرة!
+    google.script.run
+      .withSuccessHandler(function(result) {
+        if (result && result.success) {
+          // نجاح تسجيل الدخول
+          localStorage.setItem("gas_renewal_is_logged_in", "true");
+          localStorage.setItem("gas_renewal_user_email", result.email);
+
+          showToast("🔓 تم التحقق وتسجيل الدخول بنجاح من ورقة البيانات!", "success");
+          initGasApp();
+        } else {
+          // فشل تسجيل الدخول
+          showError(result ? result.message : "عذراً! البريد الإلكتروني أو كلمة المرور غير صحيحة.");
+        }
+        resetLoginButton();
+      })
+      .withFailureHandler(function(err) {
+        showError("حدث خطأ في الاتصال بالخادم: " + err.toString());
+        resetLoginButton();
+      })
+      .validateUserLogin(email, password);
+
+    function showError(message) {
+      if (errorMsg) errorMsg.innerText = message;
+      if (errorAlert) {
+        errorAlert.classList.remove("d-none");
+        errorAlert.classList.add("animate-shake");
+        // إزالة أنيميشن الاهتزاز بعد فترة لإعادة تفعيله لاحقاً
+        setTimeout(() => errorAlert.classList.remove("animate-shake"), 500);
+      }
+    }
+
+    function resetLoginButton() {
+      if (loginBtn) loginBtn.disabled = false;
+      if (btnSpinner) btnSpinner.classList.add("d-none");
+      if (btnText) btnText.innerText = "تسجيل الدخول الآمن";
+    }
+  }
+
+  /**
+   * تسجيل الخروج وإعادة تعيين الجلسة
+   */
+  function handleGasLogout() {
+    localStorage.removeItem("gas_renewal_is_logged_in");
+    localStorage.removeItem("gas_renewal_user_email");
+    
+    showToast("🔒 تم تسجيل الخروج بنجاح.", "info");
+    initGasApp();
+  }
+
+  /**
+   * تبديل إظهار وإخفاء كلمة المرور في شاشة الدخول
+   */
+  function toggleGasPasswordVisibility() {
+    const passwordInput = document.getElementById("gasLoginPassword");
+    const toggleIcon = document.getElementById("gasPasswordToggleIcon");
+    
+    if (!passwordInput || !toggleIcon) return;
+
+    if (passwordInput.type === "password") {
+      passwordInput.type = "text";
+      toggleIcon.className = "bi bi-eye-slash";
+    } else {
+      passwordInput.type = "password";
+      toggleIcon.className = "bi bi-eye";
+    }
+  }
+</script>
